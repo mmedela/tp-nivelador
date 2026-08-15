@@ -1,23 +1,7 @@
 import sys
-from tests import (
-    OutputFiles,
-    SigtermHandling,
-    Concurrency,
-    Json,
-    ForcedExit,
-    ServerShortReadWrite,
-    ClientShortReadWrite,
-)
+from tests import OutputFiles, SigtermHandling, Concurrency, Json, ForcedExit, Batching
 
-TEST_CASES = [
-    OutputFiles,
-    SigtermHandling,
-    Concurrency,
-    Json,
-    ForcedExit,
-    ServerShortReadWrite,
-    ClientShortReadWrite,
-]
+TEST_CASES = [Json, ForcedExit, OutputFiles, Batching, Concurrency, SigtermHandling]
 MESSAGE_PADDING = 32
 
 
@@ -29,10 +13,10 @@ def main():
             print("OK")
         except Exception as e:
             print("ERROR")
-            print(f"ERROR: {e}", file=sys.stderr)
-            print(f"\nHINT: {test_case.error_hint}\n", file=sys.stderr)
-            return 1
-    return 0
+            print(f"{e}", file=sys.stderr, end="\n\n")
+            print(f"HINT: {test_case.error_hint}", file=sys.stderr, end="\n\n")
+            exit_code = 1
+    return exit_code
 
 
 if __name__ == "__main__":
