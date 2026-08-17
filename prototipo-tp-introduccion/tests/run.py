@@ -17,6 +17,10 @@ TEST_CASES = [
     Concurrency,
     SigtermHandling,
     MemoryProfile,
+    Concurrency,
+    MemoryProfile,
+    SigtermHandling,
+    Batching,
 ]
 MESSAGE_PADDING = 32
 
