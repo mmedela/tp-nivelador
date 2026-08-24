@@ -12,6 +12,8 @@ SERVER_SERVICE = """services:
       - PYTHONUNBUFFERED=1
       - SERVER_HOST=server
       - SERVER_PORT=5678
+    ports:
+      - "5678:5678"
 """
 
 CLIENT_SERVICE = """
