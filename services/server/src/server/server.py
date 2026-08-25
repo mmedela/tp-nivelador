@@ -1,41 +1,43 @@
+import os
 import socket
 import logger
+from lottery.lottery import Lottery
 import safe_socket
+import protocol
 
 class Server:
     def __init__(self, server_host: str, server_port: int) -> None:
         self.server_host = server_host
         self.server_port = server_port
+        self.lottery = Lottery(storage_path=os.environ.get("STORAGE_PATH", "/tmp/bets.csv")) 
 
     def _handle_client(self, client_socket):
         action = "handle-client"
         message_amount = 0
         try:
             logger.info(action, logger.LogResult.in_progress)
+            agency_id, bets = None, []
             while True:
-                length_bytes = safe_socket.recv_all(client_socket, 4)
-                length = int.from_bytes(length_bytes, byteorder="big")
-                if length == 0:
-                    logger.info(
-                        action, 
-                        logger.LogResult.success,
-                        "messages-amount",
-                        message_amount
-                    )
-                    return
-                
-                client_message = safe_socket.recv_all(
-                    client_socket,
-                    length
-                )
-                message_amount += 1
-                safe_socket.send_all(client_socket, length.to_bytes(4, byteorder="big"))
-                safe_socket.send_all(client_socket, client_message)
+                tag, data = protocol.recv_message(client_socket)
+                if tag == protocol.AGENCY:
+                    agency_id = int.from_bytes(data, "big")
+                elif tag == protocol.BET:
+                    bets.append(protocol.deserialize_bet(agency_id, data))
+                    message_amount += 1
+                elif tag == protocol.FINISH:
+                    break
+            self.lottery.store_bets(bets)
+            winners = [b for b in self.lottery.load_bets()
+                    if b.agency_id == agency_id and self.lottery.has_won(b)]
+            for w in winners:
+                protocol.send_message(client_socket, protocol.WINNER, protocol.serialize_winner(w))
+            protocol.send_message(client_socket, protocol.FINISH)
+            logger.info(action, logger.LogResult.success, "messages-amount", message_amount)
         except Exception as e:
-            logger.error(
-                action, logger.LogResult.fail, "messages-amount", message_amount
-            )
+            logger.error(action, logger.LogResult.fail, "messages-amount", message_amount)
             raise e
+        finally:
+            client_socket.close()
 
     def run(self):
         action = "accept-connection"

@@ -2,22 +2,21 @@ package client
 
 import (
 	"bufio"
-	"bytes"
-	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
-	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/protocol"
 )
 
 const CONNECTION_ATTEMPTS_MAX = 20
-const CONNECTION_ATTEMPS_DELAY_MS = 50
+const CONNECTION_ATTEMPS_DELAY_MS = 500
 
 type ClientConfig struct {
 	ServerHost string
@@ -69,14 +68,10 @@ func (client *Client) Run() error {
 	defer client.conn.Close()
 
 	logger.Info(
-		mainAction,
-		logger.InProgress,
-		"agency-id",
-		client.config.AgencyId,
-		"input-file",
-		client.config.InputFile,
-		"output-file",
-		client.config.OutputFile,
+		mainAction, logger.InProgress,
+		"agency-id", client.config.AgencyId,
+		"input-file", client.config.InputFile,
+		"output-file", client.config.OutputFile,
 	)
 
 	inputFile, err := os.Open(client.config.InputFile)
@@ -98,73 +93,55 @@ func (client *Client) Run() error {
 	}
 	defer outputFile.Close()
 
+	agency, _ := strconv.Atoi(client.config.AgencyId)
+	if err := protocol.SendAgency(client.conn, agency); err != nil {
+		logger.Error("send-agency", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+		return err
+	}
+
 	reader := bufio.NewReader(inputFile)
 	messageId := 0
 	for {
-		clientMessage, err := reader.ReadString('\n')
+		line, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
 			logger.Error("read-input-line", logger.Fail, "agency-id", client.config.AgencyId, "message-id", messageId, "err", err)
 			return err
 		}
-
-		if len(clientMessage) > 0 {
-			messageArgs := []any{"agency-id", client.config.AgencyId, "message-id", messageId}
-			if err := client.sendMessageAndWriteResponse([]byte(clientMessage), outputFile, messageArgs...); err != nil {
+		if len(line) > 0 {
+			if err := protocol.SendBet(client.conn, []byte(strings.TrimRight(line, "\n"))); err != nil {
+				logger.Error("send-bet", logger.Fail, "agency-id", client.config.AgencyId, "message-id", messageId, "err", err)
 				return err
 			}
 			messageId++
 		}
-
 		if errors.Is(err, io.EOF) {
 			break
 		}
 	}
-	zeroLength := make([]byte, 4)
-	if err := safe_socket.SendAll(client.conn, zeroLength) ; err != nil{
-		logger.Error("send.eof", logger.Fail, "agency.id", client.config.AgencyId, "err", err)
+
+	if err := protocol.SendFinish(client.conn); err != nil {
+		logger.Error("send-finish", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
 		return err
 	}
+
+	for {
+		tag, data, err := protocol.Recv(client.conn)
+		if err != nil {
+			logger.Error("recv-winner", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+			return err
+		}
+		if tag == protocol.Finish {
+			break
+		}
+		if tag == protocol.Winner {
+			if _, err := outputFile.Write(append(data, '\n')); err != nil {
+				logger.Error("write-output-line", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+				return err
+			}
+		}
+	}
+
 	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId, "messages-amount", messageId)
-
 	return nil
 }
 
-func (client *Client) sendMessageAndWriteResponse(clientMessage []byte, outputFile *os.File, messageArgs ...any) error {
-	
-	lengthBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(lengthBytes, uint32(len(clientMessage)))
-
-	if err := safe_socket.SendAll(client.conn, lengthBytes); err != nil {
-		logger.Error("send-err", logger.Fail, messageArgs...)
-		return err
-	}
-
-	if err := safe_socket.SendAll(client.conn, clientMessage); err != nil {
-		logger.Error("send-message", logger.Fail, messageArgs...)
-		return err
-	}
-
-	responseLengthBytes, err := safe_socket.RecvAll(client.conn, 4)
-	if err != nil {
-		logger.Error("recv-response-length", logger.Fail, messageArgs...)
-		return err
-	}
-	responseLength := binary.BigEndian.Uint32(responseLengthBytes)
-	responseBuffer, err := safe_socket.RecvAll(client.conn, int(responseLength))
-	if err != nil {
-		logger.Error("recv-response", logger.Fail, messageArgs...)
-		return err
-	}
-
-	if !bytes.Equal(responseBuffer, clientMessage) {
-		logger.Error("check-response", logger.Fail, messageArgs...)
-		return fmt.Errorf("echo response does not match request")
-	}
-
-	if _, err := outputFile.Write(responseBuffer); err != nil {
-		logger.Error("write-output-line", logger.Fail, messageArgs...)
-		return err
-	}
-
-	return nil
-}
