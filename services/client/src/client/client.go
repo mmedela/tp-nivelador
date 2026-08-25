@@ -3,6 +3,7 @@ package client
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -16,9 +17,7 @@ import (
 )
 
 const CONNECTION_ATTEMPTS_MAX = 20
-const CONNECTION_ATTEMPS_DELAY_MS = 500
-
-const ECHO_CLIENT_BUFFER_SIZE = 512
+const CONNECTION_ATTEMPS_DELAY_MS = 50
 
 type ClientConfig struct {
 	ServerHost string
@@ -120,18 +119,38 @@ func (client *Client) Run() error {
 			break
 		}
 	}
+	zeroLength := make([]byte, 4)
+	if err := safe_socket.SendAll(client.conn, zeroLength) ; err != nil{
+		logger.Error("send.eof", logger.Fail, "agency.id", client.config.AgencyId, "err", err)
+		return err
+	}
 	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId, "messages-amount", messageId)
 
 	return nil
 }
 
 func (client *Client) sendMessageAndWriteResponse(clientMessage []byte, outputFile *os.File, messageArgs ...any) error {
+	
+	lengthBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(lengthBytes, uint32(len(clientMessage)))
+
+	if err := safe_socket.SendAll(client.conn, lengthBytes); err != nil {
+		logger.Error("send-err", logger.Fail, messageArgs...)
+		return err
+	}
+
 	if err := safe_socket.SendAll(client.conn, clientMessage); err != nil {
 		logger.Error("send-message", logger.Fail, messageArgs...)
 		return err
 	}
 
-	responseBuffer, err := safe_socket.RecvAll(client.conn, max(ECHO_CLIENT_BUFFER_SIZE, len(clientMessage)))
+	responseLengthBytes, err := safe_socket.RecvAll(client.conn, 4)
+	if err != nil {
+		logger.Error("recv-response-length", logger.Fail, messageArgs...)
+		return err
+	}
+	responseLength := binary.BigEndian.Uint32(responseLengthBytes)
+	responseBuffer, err := safe_socket.RecvAll(client.conn, int(responseLength))
 	if err != nil {
 		logger.Error("recv-response", logger.Fail, messageArgs...)
 		return err
