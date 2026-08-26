@@ -11,7 +11,8 @@ const (
 	Batch    byte = 2
 	Finish   byte = 3
 	Winner   byte = 4
-	BatchAck byte = 5
+	BatchAck byte = 5 
+)
 
 func send(w io.Writer, tag byte, data []byte) error {
 	payload := append([]byte{tag}, data...)
