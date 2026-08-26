@@ -1,10 +1,12 @@
 from .protocol import (
     AGENCY,
-    BET,
+    BATCH,
     FINISH,
     WINNER,
+    BATCH_ACK,
+    serialize_batch_ack,
     send_message,
     recv_message,
-    deserialize_bet,
+    deserialize_bets,
     serialize_winner,
 )

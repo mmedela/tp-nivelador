@@ -1,7 +1,7 @@
 import safe_socket
 from lottery.bet import Bet
 
-AGENCY, BET, FINISH, WINNER = 1, 2, 3, 4
+AGENCY, BATCH, FINISH, WINNER, BATCH_ACK = 1, 2, 3, 4, 5
 
 def send_message(sock, tag, data=b""):
     payload = bytes([tag]) + data
@@ -13,8 +13,14 @@ def recv_message(sock):
     return payload[0], payload[1:]
 
 def deserialize_bet(agency_id, data):
-    first, last, doc, birth, num = data.decode().split(",")
+    first, last, doc, birth, num = data.split(",")
     return Bet(agency_id, first, last, int(doc), birth, int(num))
 
 def serialize_winner(bet):
     return f"{bet.first_name},{bet.last_name},{bet.document},{bet.birthdate},{bet.number}".encode()
+
+def deserialize_bets(agency_id, data):
+    return [deserialize_bet(agency_id, bet) for bet in data.decode().split("\n")]
+
+def serialize_batch_ack(ok: bool):
+    return bytes([0 if ok else 1])
