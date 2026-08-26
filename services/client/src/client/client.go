@@ -65,29 +65,28 @@ func connectToServer(host, port string) (net.Conn, error) {
 	return conn, err
 }
 
- func flushBatch(batch, client, logger) error {
-		if len(batch) == 0 {
-			return nil
-		}
-		payload := bytes.Join(batch, []byte("\n"))
-		if err := protocol.SendBatch(client.conn, payload); err != nil {
-			logger.Error("send-batch", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
-			return err
-		}
-
-		tag, ackData, err := protocol.Recv(client.conn)
-		if err != nil {
-			logger.Error("recv-batch-ack", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
-			return err
-		}
-		if tag != protocol.BatchAck || len(ackData) == 0 || ackData[0] != 0 {
-			logger.Error("recv-batch-ack", logger.Fail, "agency-id", client.config.AgencyId, "tag", tag)
-			return errors.New("server rejected batch")
-		}
-
-		batch = batch[:0]
-		return nil
+func flushBatch(batch [][]byte, client *Client) ([][]byte, error) {
+	if len(batch) == 0 {
+		return batch, nil
 	}
+	payload := bytes.Join(batch, []byte("\n"))
+	if err := protocol.SendBatch(client.conn, payload); err != nil {
+		logger.Error("send-batch", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+		return batch, err
+	}
+
+	tag, ackData, err := protocol.Recv(client.conn)
+	if err != nil {
+		logger.Error("recv-batch-ack", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+		return batch, err
+	}
+	if tag != protocol.BatchAck || len(ackData) == 0 || ackData[0] != 0 {
+		logger.Error("recv-batch-ack", logger.Fail, "agency-id", client.config.AgencyId, "tag", tag)
+		return batch, errors.New("server rejected batch")
+	}
+
+	return batch[:0], nil
+}
 
 func (client *Client) Run() error {
 	const mainAction = "process-input-file"
@@ -140,8 +139,10 @@ func (client *Client) Run() error {
 			totalBetsSent++
 		}
 		if len(batch) == client.config.BatchSize {
-			if err := flushBatch(); err != nil {
-				return err
+			var flushErr error
+			batch, flushErr = flushBatch(batch, client)
+			if flushErr != nil {
+				return flushErr
 			}
 		}
 		if errors.Is(err, io.EOF) {
@@ -149,7 +150,7 @@ func (client *Client) Run() error {
 		}
 	}
 
-	if err := flushBatch(); err != nil {
+	if _, err := flushBatch(batch, client); err != nil {
 		return err
 	}
 
