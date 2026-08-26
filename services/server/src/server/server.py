@@ -2,7 +2,6 @@ import os
 import socket
 import logger
 from lottery.lottery import Lottery
-import safe_socket
 import protocol
 
 class Server:
@@ -16,17 +15,22 @@ class Server:
         message_amount = 0
         try:
             logger.info(action, logger.LogResult.in_progress)
-            agency_id, bets = None, []
+            agency_id = None
             while True:
                 tag, data = protocol.recv_message(client_socket)
                 if tag == protocol.AGENCY:
                     agency_id = int.from_bytes(data, "big")
-                elif tag == protocol.BET:
-                    bets.append(protocol.deserialize_bet(agency_id, data))
-                    message_amount += 1
+                elif tag == protocol.BATCH:
+                    try:
+                        batch_bets = protocol.deserialize_bets(agency_id, data)
+                        self.lottery.store_bets(batch_bets)
+                        message_amount += len(batch_bets)
+                        protocol.send_message(client_socket, protocol.BATCH_ACK, protocol.serialize_batch_ack(True))
+                    except Exception:
+                        logger.error(action, logger.LogResult.fail, "messages-amount", message_amount)
+                        protocol.send_message(client_socket, protocol.BATCH_ACK, protocol.serialize_batch_ack(False))
                 elif tag == protocol.FINISH:
                     break
-            self.lottery.store_bets(bets)
             winners = [b for b in self.lottery.load_bets()
                     if b.agency_id == agency_id and self.lottery.has_won(b)]
             for w in winners:
