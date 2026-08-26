@@ -7,11 +7,11 @@ import (
 )
 
 const (
-	Agency byte = 1
-	Bet    byte = 2
-	Finish byte = 3
-	Winner byte = 4
-)
+	Agency   byte = 1
+	Batch    byte = 2
+	Finish   byte = 3
+	Winner   byte = 4
+	BatchAck byte = 5
 
 func send(w io.Writer, tag byte, data []byte) error {
 	payload := append([]byte{tag}, data...)
@@ -32,5 +32,5 @@ func Recv(r io.Reader) (byte, []byte, error) {
 func SendAgency(w io.Writer, agency int) error {
 	d := make([]byte, 4); binary.BigEndian.PutUint32(d, uint32(agency)); return send(w, Agency, d)
 }
-func SendBet(w io.Writer, csv []byte) error { return send(w, Bet, csv) }
+func SendBatch(w io.Writer, csv []byte) error { return send(w, Batch, csv) }
 func SendFinish(w io.Writer) error          { return send(w, Finish, nil) }
