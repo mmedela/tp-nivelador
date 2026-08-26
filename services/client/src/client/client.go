@@ -2,6 +2,7 @@ package client
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"io"
 	"net"
@@ -19,11 +20,12 @@ const CONNECTION_ATTEMPTS_MAX = 20
 const CONNECTION_ATTEMPS_DELAY_MS = 500
 
 type ClientConfig struct {
-	ServerHost string
-	ServerPort string
-	AgencyId   string
-	InputFile  string
-	OutputFile string
+	ServerHost 	string
+	ServerPort 	string
+	AgencyId   	string
+	InputFile  	string
+	OutputFile 	string
+	BatchSize 	int
 }
 
 type Client struct {
@@ -63,6 +65,30 @@ func connectToServer(host, port string) (net.Conn, error) {
 	return conn, err
 }
 
+ func flushBatch(batch, client, logger) error {
+		if len(batch) == 0 {
+			return nil
+		}
+		payload := bytes.Join(batch, []byte("\n"))
+		if err := protocol.SendBatch(client.conn, payload); err != nil {
+			logger.Error("send-batch", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+			return err
+		}
+
+		tag, ackData, err := protocol.Recv(client.conn)
+		if err != nil {
+			logger.Error("recv-batch-ack", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
+			return err
+		}
+		if tag != protocol.BatchAck || len(ackData) == 0 || ackData[0] != 0 {
+			logger.Error("recv-batch-ack", logger.Fail, "agency-id", client.config.AgencyId, "tag", tag)
+			return errors.New("server rejected batch")
+		}
+
+		batch = batch[:0]
+		return nil
+	}
+
 func (client *Client) Run() error {
 	const mainAction = "process-input-file"
 	defer client.conn.Close()
@@ -100,23 +126,31 @@ func (client *Client) Run() error {
 	}
 
 	reader := bufio.NewReader(inputFile)
-	messageId := 0
+	totalBetsSent := 0
+	batch := make([][]byte, 0, client.config.BatchSize)
+
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
-			logger.Error("read-input-line", logger.Fail, "agency-id", client.config.AgencyId, "message-id", messageId, "err", err)
+			logger.Error("read-input-line", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
 			return err
 		}
 		if len(line) > 0 {
-			if err := protocol.SendBet(client.conn, []byte(strings.TrimRight(line, "\n"))); err != nil {
-				logger.Error("send-bet", logger.Fail, "agency-id", client.config.AgencyId, "message-id", messageId, "err", err)
+			batch = append(batch, []byte(strings.TrimRight(line, "\n")))
+			totalBetsSent++
+		}
+		if len(batch) == client.config.BatchSize {
+			if err := flushBatch(); err != nil {
 				return err
 			}
-			messageId++
 		}
 		if errors.Is(err, io.EOF) {
 			break
 		}
+	}
+
+	if err := flushBatch(); err != nil {
+		return err
 	}
 
 	if err := protocol.SendFinish(client.conn); err != nil {
@@ -141,7 +175,7 @@ func (client *Client) Run() error {
 		}
 	}
 
-	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId, "messages-amount", messageId)
+	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId, "messages-amount", totalBetsSent)
 	return nil
 }
 
