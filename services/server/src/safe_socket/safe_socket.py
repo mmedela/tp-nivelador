@@ -8,7 +8,7 @@ def recv_all(socket: socket.socket, size):
     while len(buffer) < size:
         chunk = socket.recv(size-len(buffer))
         if not chunk:
-            continue
+            raise OSError("Connection closed before recieving full payload")
         buffer.extend(chunk)
     return bytes(buffer)
 
@@ -16,5 +16,9 @@ def recv_all(socket: socket.socket, size):
 def send_all(socket: socket.socket, bytes):
     total_sent = 0
     while total_sent < len(bytes):
-        total_sent += socket.send(bytes[total_sent:])
+        sent = socket.send(bytes[total_sent:])
+        if sent == 0:
+            raise OSError("Connection closed before sending full payload")
+        total_sent += sent
+        
     return total_sent
