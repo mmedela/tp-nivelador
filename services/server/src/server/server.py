@@ -86,7 +86,7 @@ class Server:
             logger.info(action, logger.LogResult.success, "messages-amount", message_amount)
         except Exception as e:
             logger.error(action, logger.LogResult.fail, "messages-amount", message_amount)
-            raise e
+            return
         finally:
             with self.client_sockets_lock:
                 self.client_sockets.discard(client_socket)
