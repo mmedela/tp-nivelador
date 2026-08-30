@@ -12,6 +12,8 @@ SERVER_SERVICE = """services:
       - PYTHONUNBUFFERED=1
       - SERVER_HOST=server
       - SERVER_PORT=5678
+      - AGENCY_QUORUM_MIN=6
+      - GRACE_TIME=4
     ports:
       - "5678:5678"
 """
