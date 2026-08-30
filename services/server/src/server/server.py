@@ -113,7 +113,7 @@ class Server:
                     raise e
                 logger.info(action, logger.LogResult.success)
 
-                client_thread = threading.Thread(target=self._handle_client, args=(client_socket,), daemon=True)
+                client_thread = threading.Thread(target=self._handle_client, args=(client_socket,), daemon=False)
                 with self.threads_lock:
                     self.clien_threads.append(client_thread)
                 client_thread.start()
