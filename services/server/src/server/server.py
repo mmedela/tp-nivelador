@@ -8,6 +8,9 @@ import protocol
 import signal
 
 class Server:
+
+    DEFAULT_GRACE_TIME = 4.0 
+
     def __init__(self, server_host: str, server_port: int, agency_quorum_min: int) -> None:
         self.server_host = server_host
         self.server_port = server_port
@@ -118,7 +121,7 @@ class Server:
                     self.clien_threads.append(client_thread)
                 client_thread.start()
 
-            grace_time = 4.0
+            grace_time = os.environ.get("GRACE_TIME", DEFAULT_GRACE_TIME)
             with self.threads_lock:
                 for client_thread in self.clien_threads:
                     start = time.monotonic()
