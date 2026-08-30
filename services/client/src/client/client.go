@@ -7,11 +7,13 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
-
+	"context"
+	"syscall"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/protocol"
 )
@@ -29,8 +31,10 @@ type ClientConfig struct {
 }
 
 type Client struct {
-	conn   net.Conn
-	config ClientConfig
+	conn    net.Conn
+	config  ClientConfig
+	ctx 	context.Context
+	cancel	context.CancelFunc
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -39,8 +43,23 @@ func NewClient(config ClientConfig) (*Client, error) {
 		logger.Warn("connect-to-server", logger.Fail)
 		return nil, err
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	client := &Client{conn: conn, config: config, ctx: ctx, cancel: cancel}
 
-	client := &Client{conn: conn, config: config}
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM)
+
+	go func(){
+		select{
+		case <- sigChan:
+			logger.Info("sigterm", logger.InProgress, "agency-id", config.AgencyId)
+			cancel()
+			client.conn.Close()
+		case <- ctx.Done():
+
+		}
+	}()
+
 	return client, nil
 }
 
@@ -91,6 +110,7 @@ func flushBatch(batch [][]byte, client *Client) ([][]byte, error) {
 func (client *Client) Run() error {
 	const mainAction = "process-input-file"
 	defer client.conn.Close()
+	defer client.cancel()
 
 	logger.Info(
 		mainAction, logger.InProgress,
@@ -120,6 +140,9 @@ func (client *Client) Run() error {
 
 	agency, _ := strconv.Atoi(client.config.AgencyId)
 	if err := protocol.SendAgency(client.conn, agency); err != nil {
+		if client.ctx.Err() != nil{
+			return nil
+		}
 		logger.Error("send-agency", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
 		return err
 	}
@@ -129,6 +152,12 @@ func (client *Client) Run() error {
 	batch := make([][]byte, 0, client.config.BatchSize)
 
 	for {
+		select{
+		case <-client.ctx.Done():
+			return nil
+		default:
+
+		}
 		line, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
 			logger.Error("read-input-line", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
@@ -151,10 +180,16 @@ func (client *Client) Run() error {
 	}
 
 	if _, err := flushBatch(batch, client); err != nil {
+		if client.ctx.Err() != nil{
+			return nil
+		}
 		return err
 	}
 
 	if err := protocol.SendFinish(client.conn); err != nil {
+		if client.ctx.Err() != nil{
+				return nil
+			}
 		logger.Error("send-finish", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
 		return err
 	}
@@ -162,6 +197,9 @@ func (client *Client) Run() error {
 	for {
 		tag, data, err := protocol.Recv(client.conn)
 		if err != nil {
+			if client.ctx.Err() != nil{
+				return nil
+			}
 			logger.Error("recv-winner", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
 			return err
 		}
