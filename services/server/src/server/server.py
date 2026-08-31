@@ -7,9 +7,9 @@ from lottery.lottery import Lottery
 import protocol
 import signal
 
+DEFAULT_GRACE_TIME = 4.0 
 class Server:
 
-    DEFAULT_GRACE_TIME = 4.0 
 
     def __init__(self, server_host: str, server_port: int, agency_quorum_min: int) -> None:
         self.server_host = server_host
