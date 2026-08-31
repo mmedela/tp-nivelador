@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"runtime"
 	"context"
 	"syscall"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
@@ -150,6 +151,7 @@ func (client *Client) Run() error {
 	reader := bufio.NewReader(inputFile)
 	totalBetsSent := 0
 	batch := make([][]byte, 0, client.config.BatchSize)
+	flushCount := 0
 
 	for {
 		select{
@@ -172,6 +174,10 @@ func (client *Client) Run() error {
 			batch, flushErr = flushBatch(batch, client)
 			if flushErr != nil {
 				return flushErr
+			}
+			flushCount++
+			if flushCount % 64 == 0 {
+				runtime.GC()
 			}
 		}
 		if errors.Is(err, io.EOF) {
