@@ -2,15 +2,12 @@ package client
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
-	"io"
 	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 	"runtime"
 	"context"
@@ -85,27 +82,27 @@ func connectToServer(host, port string) (net.Conn, error) {
 	return conn, err
 }
 
-func flushBatch(batch [][]byte, client *Client) ([][]byte, error) {
+func sendBatchAndWaitAck(batch [][]byte, client *Client) error {
 	if len(batch) == 0 {
-		return batch, nil
+		return nil
 	}
-	payload := bytes.Join(batch, []byte("\n"))
-	if err := protocol.SendBatch(client.conn, payload); err != nil {
+
+	if err := protocol.SendBatch(client.conn, batch); err != nil {
 		logger.Error("send-batch", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
-		return batch, err
+		return err
 	}
 
 	tag, ackData, err := protocol.Recv(client.conn)
 	if err != nil {
 		logger.Error("recv-batch-ack", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
-		return batch, err
+		return err
 	}
 	if tag != protocol.BatchAck || len(ackData) == 0 || ackData[0] != 0 {
 		logger.Error("recv-batch-ack", logger.Fail, "agency-id", client.config.AgencyId, "tag", tag)
-		return batch, errors.New("server rejected batch")
+		return errors.New("server rejected batch")
 	}
 
-	return batch[:0], nil
+	return nil
 }
 
 func (client *Client) Run() error {
@@ -148,44 +145,44 @@ func (client *Client) Run() error {
 		return err
 	}
 
-	reader := bufio.NewReader(inputFile)
+	scanner := bufio.NewScanner(inputFile)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	totalBetsSent := 0
 	batch := make([][]byte, 0, client.config.BatchSize)
 	flushCount := 0
 
-	for {
+
+	for scanner.Scan() {
 		select{
 		case <-client.ctx.Done():
 			return nil
 		default:
 
 		}
-		line, err := reader.ReadString('\n')
-		if err != nil && !errors.Is(err, io.EOF) {
-			logger.Error("read-input-line", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
-			return err
-		}
-		if len(line) > 0 {
-			batch = append(batch, []byte(strings.TrimRight(line, "\n")))
-			totalBetsSent++
-		}
+		line := append([]byte(nil), scanner.Bytes()...)
+		batch = append(batch, line)
+		totalBetsSent++
+
 		if len(batch) == client.config.BatchSize {
-			var flushErr error
-			batch, flushErr = flushBatch(batch, client)
-			if flushErr != nil {
-				return flushErr
+			// var flushErr error
+			if err := sendBatchAndWaitAck(batch, client); err != nil{
+				return err
 			}
+			
+			batch = batch[:0]
+
 			flushCount++
 			if flushCount % 64 == 0 {
 				runtime.GC()
 			}
 		}
-		if errors.Is(err, io.EOF) {
-			break
-		}
 	}
 
-	if _, err := flushBatch(batch, client); err != nil {
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	if err := sendBatchAndWaitAck(batch, client); err != nil{
 		if client.ctx.Err() != nil{
 			return nil
 		}
@@ -196,6 +193,7 @@ func (client *Client) Run() error {
 		if client.ctx.Err() != nil{
 				return nil
 			}
+		
 		logger.Error("send-finish", logger.Fail, "agency-id", client.config.AgencyId, "err", err)
 		return err
 	}

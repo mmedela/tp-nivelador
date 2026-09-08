@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"bytes"
 	"io"
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
 )
@@ -33,5 +34,5 @@ func Recv(r io.Reader) (byte, []byte, error) {
 func SendAgency(w io.Writer, agency int) error {
 	d := make([]byte, 4); binary.BigEndian.PutUint32(d, uint32(agency)); return send(w, Agency, d)
 }
-func SendBatch(w io.Writer, csv []byte) error { return send(w, Batch, csv) }
+func SendBatch(w io.Writer, batch [][]byte) error { return send(w, Batch, bytes.Join(batch, []byte("\n"))) }
 func SendFinish(w io.Writer) error          { return send(w, Finish, nil) }
