@@ -2,7 +2,8 @@ package safe_socket
 
 import "io"
 
-//TODO: Complete with a short-read/short-write tolerant implementation
+//TCP no garantiza que recv/send procesen todo el buffer en una sola llamada.
+//estas funciones repiten la operacion hasta completar exactamente la cantidad esperada
 
 func SendAll(socket io.Writer, bytes []byte) error {
 	total := 0

@@ -15,6 +15,8 @@ const (
 	BatchAck byte = 5 
 )
 
+//cada mensaje viaja como: 4 bytes de longitud big-endian + 1 byte de tag + payload
+//El prefijo de longitud permite reconstruir mensajes aunque TCP fragmente los datos
 func send(w io.Writer, tag byte, data []byte) error {
 	payload := append([]byte{tag}, data...)
 	frame := make([]byte, 4+len(payload))

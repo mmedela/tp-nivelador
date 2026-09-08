@@ -47,6 +47,8 @@ func NewClient(config ClientConfig) (*Client, error) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM)
 
+	//Al recibir SIGTERM se cancela el contexto y se cierra la conexion para 
+	//desbloquear operaciones de red que podrian estar esperando indefinidamente
 	go func(){
 		select{
 		case <- sigChan:
@@ -151,7 +153,7 @@ func (client *Client) Run() error {
 	batch := make([][]byte, 0, client.config.BatchSize)
 	flushCount := 0
 
-
+	//Se acumulan lineas completas hasta BatchSize para reducir la cantidad de mensajes TCP
 	for scanner.Scan() {
 		select{
 		case <-client.ctx.Done():

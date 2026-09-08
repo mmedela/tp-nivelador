@@ -1,6 +1,7 @@
 import socket
 
-# TODO: Complete with a short-read/short-write tolerant implementation
+#TCP no garantiza que recv/send procesen todo el buffer en una sola llamada.
+#estas funciones repiten la operacion hasta completar exactamente la cantidad esperada
 
 
 def recv_all(socket: socket.socket, size):

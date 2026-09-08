@@ -29,8 +29,12 @@ class Server:
         self.finished_agencies = set()
         self.quorum_condition = threading.Condition()
 
-
+    
     def _handle_sigterm(self, sugnum, frame):
+        """
+        SIGTERM debe despertar tanto al accept() como a los threads bloqueados esperando quorum.
+        Por eso se cierra el socjet servidor, se notifican las condiciones y se cierran cliente activos.
+        """
         self.shutting_down.set()
 
         with self.quorum_condition:
@@ -72,6 +76,8 @@ class Server:
                 elif tag == protocol.FINISH:
                     break
 
+            # Cada agencia espera hasta que haya terminado el minimo requerido.
+            # El while evite spurious wakeup y tambien permite salir si comienza el apagado gracefull
             with self.quorum_condition:
                 self.finished_agencies.add(agency_id)
                 self.quorum_condition.notify_all()
@@ -80,6 +86,8 @@ class Server:
                 if self.shutting_down.is_set():
                     return
 
+            #El sorteo se calcula sobre todas las apuestas almacenadas, pero cada cliente
+            #solo debe recibir los ganadores correspondientes a su propia agencia
             with self.lottery_lock:
                 winners = [b for b in self.lottery.load_bets()
                         if b.agency_id == agency_id and self.lottery.has_won(b)]

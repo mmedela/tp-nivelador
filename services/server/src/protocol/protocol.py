@@ -3,6 +3,9 @@ from lottery.bet import Bet
 
 AGENCY, BATCH, FINISH, WINNER, BATCH_ACK = 1, 2, 3, 4, 5
 
+#Cada mensaje viaja como: 4 bytes de longitud big-endian + 1 byte de tag + payload
+#El prefijo de longitud permite reconstruir mensajes aunque TCP fragmente los datos
+
 def send_message(sock, tag, data=b""):
     payload = bytes([tag]) + data
     safe_socket.send_all(sock, len(payload).to_bytes(4, "big") + payload)
